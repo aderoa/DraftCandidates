@@ -178,15 +178,24 @@
         for(var li=0;li<list3.length;li++){ if(available.has(list3[li].name)){top=list3[li];break;} }
         if(top){ votes[top.name]=(votes[top.name]||0)+src3.weight; }
       }
+      // Workout boost: only AMPLIFIES players who already received >=1 source
+      // vote at this pick. A player with 0 votes here can't be boosted into
+      // contention — the boost rewards consensus targets, it doesn't invent
+      // candidates out of nothing.
       var teamPicking=pickTeamMap[pick];
       if(teamPicking){
-        for(var pn2 in players){
-          if(!available.has(pn2))continue;
-          if(players[pn2].workoutTeams.has(teamPicking)) votes[pn2]=(votes[pn2]||0)+boost;
+        for(var vn0 in votes){
+          if(votes[vn0]>0 && players[vn0] && players[vn0].workoutTeams.has(teamPicking)){
+            votes[vn0]+=boost;
+          }
         }
       }
+      // Sum of all votes cast at this pick — used as the pct denominator so
+      // candidate percentages always total 100%.
+      var voteSum=0;
+      for(var vk in votes) voteSum+=votes[vk];
       var cands=[];
-      for(var vn in votes){ cands.push({name:vn,weight:votes[vn],pct:Math.min(100,Math.round((votes[vn]/totalSourceWeight)*100))}); }
+      for(var vn in votes){ cands.push({name:vn,weight:votes[vn],pct:voteSum>0?Math.round((votes[vn]/voteSum)*100):0}); }
       cands.sort(function(a,b){return b.weight-a.weight;});
       if(cands.length===0)break;
       var winner=cands[0];
