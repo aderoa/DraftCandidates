@@ -104,11 +104,44 @@
     return rows;
   }
 
+  // Build pick → team map from CSV cols 15 (pick num) and 16 (team abbrev).
+  function buildPickTeamMap(csvText){
+    var rows=parseCSV(csvText);
+    var pickTeamMap={};
+    for(var i=1;i<rows.length;i++){
+      var pn=parseInt(rows[i][15]); var tm=(rows[i][16]||'').trim();
+      if(pn&&tm) pickTeamMap[pn]=normalizeTeam(tm);
+    }
+    return pickTeamMap;
+  }
+
+  // Build Top-3 per pick from the Monte Carlo odds distribution returned by
+  // /api/draft-simulate. distribution[playerName][pick] = probability (%) that
+  // the player is taken at that pick across thousands of jittered cascades —
+  // exactly the numbers shown on the Draft Odds page. For each pick we rank
+  // players by that probability and take the top 3. The leader is capped at
+  // 95% (no pick is ever a certainty).
+  function candidatesFromDistribution(distribution, pickTeamMap){
+    var result=[];
+    for(var pick=1;pick<=MAX_PICKS;pick++){
+      var arr=[];
+      for(var name in distribution){
+        var pct=distribution[name][String(pick)] || distribution[name][pick];
+        if(pct && pct>0) arr.push({name:name,pct:pct});
+      }
+      if(arr.length===0) continue;
+      arr.sort(function(a,b){return b.pct-a.pct;});
+      var top3=arr.slice(0,3).map(function(c,i){
+        return {name:c.name, pct:Math.min(95,Math.round(c.pct)), winner:i===0};
+      });
+      result.push({pick:pick, team:pickTeamMap[pick]||'', top3:top3});
+    }
+    return result;
+  }
+
+  // (Legacy) Single-cascade candidate computation — kept as a fallback if the
+  // odds distribution endpoint is unavailable.
   // Run the cascade and return [{pick, team, top3:[{name,pct,winner}]}].
-  // Faithful to the Predictor's computeAggregate cascade: per pick each source
-  // votes its weight for its highest available player; the team on the clock
-  // adds a 15% workout boost for players who worked out for them; the highest
-  // vote total wins. pct = round(weight / totalSourceWeight * 100).
   function computeCandidates(csvText){
     var rows=parseCSV(csvText);
     if(rows.length<2) return [];
@@ -277,17 +310,44 @@
     }
   }
 
+  var CSV_URL_FULL = 'https://hoopsmatic.com/api/draft-csv';
+  var SIMULATE_URL = 'https://hoopsmatic.com/api/draft-simulate';
+
   async function load(forceRefresh){
     document.getElementById('content').innerHTML='<div class="state">Loading cascade&#8230;</div>';
     document.getElementById('metaInfo').textContent='Loading&#8230;';
     try {
-      var url=forceRefresh?(CSV_URL+'?nocache=1'):CSV_URL;
-      var r=await fetch(url,forceRefresh?{cache:'no-store'}:{});
-      if(!r.ok)throw new Error('HTTP '+r.status);
-      var text=await r.text();
-      var cands=computeCandidates(text);
+      var csvUrl=forceRefresh?(CSV_URL_FULL+'?nocache=1'):CSV_URL_FULL;
+      var simUrl=forceRefresh?(SIMULATE_URL+'?nocache=1'):SIMULATE_URL;
+      // Fetch the pick-ownership CSV and the Monte Carlo odds distribution in
+      // parallel. The distribution is the same data the Draft Odds page uses.
+      var results=await Promise.all([
+        fetch(csvUrl, forceRefresh?{cache:'no-store'}:{}),
+        fetch(simUrl, forceRefresh?{cache:'no-store'}:{}).catch(function(){return null;})
+      ]);
+      var csvR=results[0], simR=results[1];
+      if(!csvR.ok)throw new Error('CSV HTTP '+csvR.status);
+      var csvText=await csvR.text();
+      var pickTeamMap=buildPickTeamMap(csvText);
+
+      var cands=null, sourceLabel='';
+      if(simR && simR.ok){
+        try {
+          var simJson=await simR.json();
+          var dist=simJson.distribution||{};
+          if(Object.keys(dist).length){
+            cands=candidatesFromDistribution(dist, pickTeamMap);
+            sourceLabel='draft odds';
+          }
+        } catch(e){ /* fall back below */ }
+      }
+      // Fallback: single deterministic cascade if odds unavailable.
+      if(!cands || !cands.length){
+        cands=computeCandidates(csvText);
+        sourceLabel='single cascade';
+      }
       render(cands);
-      document.getElementById('metaInfo').textContent=cands.length+' picks · updated '+new Date().toLocaleTimeString();
+      document.getElementById('metaInfo').textContent=cands.length+' picks &middot; '+sourceLabel+' &middot; '+new Date().toLocaleTimeString();
     } catch(err){
       document.getElementById('content').innerHTML='<div class="state">Error loading data: '+escapeHTML(err.message)+'</div>';
       document.getElementById('metaInfo').textContent='';
