@@ -195,7 +195,7 @@
       var voteSum=0;
       for(var vk in votes) voteSum+=votes[vk];
       var cands=[];
-      for(var vn in votes){ cands.push({name:vn,weight:votes[vn],pct:voteSum>0?Math.round((votes[vn]/voteSum)*100):0}); }
+      for(var vn in votes){ var rawPct=voteSum>0?Math.round((votes[vn]/voteSum)*100):0; cands.push({name:vn,weight:votes[vn],pct:Math.min(95,rawPct)}); }
       cands.sort(function(a,b){return b.weight-a.weight;});
       if(cands.length===0)break;
       var winner=cands[0];
