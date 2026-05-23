@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>2026 Draft — Top Candidates Per Pick · HoopsMatic</title>
+<style>
+  :root { --bg:#f8f9fa;--card:#fff;--border:#e2e5e9;--text:#1a1a2e;--text-sec:#5a6070;--text-muted:#8892a6;--accent:#3b82f6;--accent-light:rgba(59,130,246,0.07);--gold:#f59e0b;--green:#16a34a;--purple:#8b5cf6; }
+  * { box-sizing:border-box;margin:0;padding:0; }
+  body { font-family:'DM Sans',-apple-system,BlinkMacSystemFont,sans-serif;background:var(--bg);color:var(--text);padding:1.5rem;line-height:1.4; }
+  .container { max-width:900px;margin:0 auto; }
+  header { margin-bottom:1.25rem; }
+  h1 { font-size:1.5rem;font-weight:800;letter-spacing:-0.02em; }
+  h1 span { color:var(--accent); }
+  .subtitle { color:var(--text-sec);font-size:0.9rem;margin-top:0.25rem; }
+  .toolbar { display:flex;gap:0.5rem;margin:1rem 0;align-items:center;flex-wrap:wrap; }
+  .btn { font-family:inherit;font-size:0.8rem;font-weight:600;padding:0.45rem 0.9rem;border-radius:7px;border:1px solid var(--border);background:var(--card);color:var(--text);cursor:pointer; }
+  .btn:hover { border-color:var(--accent);color:var(--accent); }
+  .btn.primary { background:var(--accent);color:#fff;border-color:var(--accent); }
+  .table-wrap { background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden; }
+  table { width:100%;border-collapse:collapse; }
+  thead th { background:#f3f4f6;border-bottom:1px solid var(--border);color:var(--text-muted);font-family:'JetBrains Mono',monospace;font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:0.04em;padding:0.6rem 0.75rem;text-align:left; }
+  tbody tr { border-bottom:1px solid var(--border); }
+  tbody tr:nth-child(even) { background:#fafbfc; }
+  tbody tr:hover { background:var(--accent-light); }
+  td { padding:0.55rem 0.75rem;vertical-align:middle;font-size:0.85rem; }
+  .pick-num { font-family:'JetBrains Mono',monospace;font-weight:800;font-size:0.95rem;width:48px; }
+  .pick-num.top5 { color:var(--gold); }
+  .pick-num.lottery { color:var(--purple); }
+  .pick-num.first { color:var(--text-sec); }
+  .pick-num.second { color:var(--text-muted); }
+  .team-abbr { font-family:'JetBrains Mono',monospace;font-size:0.78rem;font-weight:600;color:var(--text-sec);width:50px; }
+  .cand { display:flex;flex-direction:column;gap:0.3rem; }
+  .cand-row { display:flex;align-items:center;gap:0.5rem; }
+  .cand-rank { font-family:'JetBrains Mono',monospace;font-size:0.7rem;color:var(--text-muted);width:16px; }
+  .cand-name { font-weight:600;min-width:150px; }
+  .cand-name.winner { color:var(--accent); }
+  .cand-bar-wrap { flex:1;max-width:180px;height:7px;background:#eef0f3;border-radius:4px;overflow:hidden; }
+  .cand-bar { height:100%;border-radius:4px; }
+  .cand-bar.w1 { background:var(--accent); }
+  .cand-bar.w2 { background:#93b8f5; }
+  .cand-bar.w3 { background:#c2d6f7; }
+  .cand-pct { font-family:'JetBrains Mono',monospace;font-size:0.74rem;color:var(--text-sec);width:38px;text-align:right; }
+  .state { padding:2rem;text-align:center;color:var(--text-muted); }
+  footer { margin-top:1.5rem;color:var(--text-muted);font-size:0.75rem;text-align:center; }
+  @media (max-width:600px) { .cand-name{min-width:110px;font-size:0.8rem;} .cand-bar-wrap{max-width:70px;} }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>2026 NBA Draft &mdash; <span>Top Candidates Per Pick</span></h1>
+    <p class="subtitle">The three most-likely picks at each draft slot, by aggregated source weight. Mirrors the live Draft Predictor cascade.</p>
+  </header>
+  <div class="toolbar">
+    <button class="btn primary" id="btnRefresh">&#8635; Refresh</button>
+    <button class="btn" id="btnCopyPresto" style="display:none">&#128203; Copy Presto Code</button>
+    <span id="metaInfo" style="color:var(--text-muted);font-size:0.78rem"></span>
+  </div>
+  <div class="table-wrap">
+    <div id="content"><div class="state">Loading cascade&#8230;</div></div>
+  </div>
+  <footer>HoopsMatic &middot; candidates computed from the same source weights as the Draft Predictor</footer>
+</div>
+<script>
+  var SOURCE_WEIGHTS = { 'AGG RANK':10,'ESPN':10,'Athletic':7,'Bleacher':6,'Babcock':6,'NBADraft':3,'CBS Sports':3,'HoopsHQ':2,'The Ringer':2,'USAT':4,'Yahoo!':2,'SB Nation':1 };
+  var CSV_URL = 'https://hoopsmatic.com/api/draft-csv';
+  var MAX_PICKS = 60;
+  var TEAM_NAME_TO_ABBR = {
+    'ATL':'ATL','ATLANTA':'ATL','HAWKS':'ATL','BOS':'BOS','BOSTON':'BOS','CELTICS':'BOS',
+    'BKN':'BKN','BROOKLYN':'BKN','NETS':'BKN','CHA':'CHA','CHARLOTTE':'CHA','HORNETS':'CHA',
+    'CHI':'CHI','CHICAGO':'CHI','BULLS':'CHI','CLE':'CLE','CLEVELAND':'CLE','CAVALIERS':'CLE','CAVS':'CLE',
+    'DAL':'DAL','DALLAS':'DAL','MAVERICKS':'DAL','MAVS':'DAL','DEN':'DEN','DENVER':'DEN','NUGGETS':'DEN',
+    'DET':'DET','DETROIT':'DET','PISTONS':'DET','GSW':'GSW','GOLDEN STATE':'GSW','WARRIORS':'GSW',
+    'HOU':'HOU','HOUSTON':'HOU','ROCKETS':'HOU','IND':'IND','INDIANA':'IND','PACERS':'IND',
+    'LAC':'LAC','LA CLIPPERS':'LAC','CLIPPERS':'LAC','LAL':'LAL','LA LAKERS':'LAL','LAKERS':'LAL',
+    'MEM':'MEM','MEMPHIS':'MEM','GRIZZLIES':'MEM','MIA':'MIA','MIAMI':'MIA','HEAT':'MIA',
+    'MIL':'MIL','MILWAUKEE':'MIL','BUCKS':'MIL','MIN':'MIN','MINNESOTA':'MIN','TIMBERWOLVES':'MIN','WOLVES':'MIN',
+    'NOP':'NOP','NEW ORLEANS':'NOP','PELICANS':'NOP','NYK':'NYK','NEW YORK':'NYK','KNICKS':'NYK','NY':'NYK',
+    'OKC':'OKC','OKLAHOMA CITY':'OKC','THUNDER':'OKC','ORL':'ORL','ORLANDO':'ORL','MAGIC':'ORL',
+    'PHI':'PHI','PHILADELPHIA':'PHI','76ERS':'PHI','SIXERS':'PHI','PHX':'PHX','PHOENIX':'PHX','SUNS':'PHX',
+    'POR':'POR','PORTLAND':'POR','TRAIL BLAZERS':'POR','BLAZERS':'POR','SAC':'SAC','SACRAMENTO':'SAC','KINGS':'SAC',
+    'SAS':'SAS','SAN ANTONIO':'SAS','SPURS':'SAS','TOR':'TOR','TORONTO':'TOR','RAPTORS':'TOR',
+    'UTA':'UTA','UTAH':'UTA','JAZZ':'UTA','WAS':'WAS','WASHINGTON':'WAS','WIZARDS':'WAS'
+  };
+  function normalizeTeam(raw){ var k=(raw||'').trim().toUpperCase(); return TEAM_NAME_TO_ABBR[k]||k; }
+
+  function parseCSV(text){
+    var rows=[],current='',inQuotes=false,row=[];
+    for(var i=0;i<text.length;i++){
+      var ch=text[i];
+      if(inQuotes){
+        if(ch==='"'&&text[i+1]==='"'){current+='"';i++;}
+        else if(ch==='"')inQuotes=false;
+        else current+=ch;
+      } else {
+        if(ch==='"')inQuotes=true;
+        else if(ch===','){row.push(current.trim());current='';}
+        else if(ch==='\n'||ch==='\r'){ if(ch==='\r'&&text[i+1]==='\n')i++; row.push(current.trim()); if(row.length>1||row[0]!=='')rows.push(row); row=[];current=''; }
+        else current+=ch;
+      }
+    }
+    if(current||row.length>0){row.push(current.trim());if(row.length>1||row[0]!=='')rows.push(row);}
+    return rows;
+  }
+
+  // Run the cascade and return [{pick, team, top3:[{name,pct,winner}]}].
+  // Faithful to the Predictor's computeAggregate cascade: per pick each source
+  // votes its weight for its highest available player; the team on the clock
+  // adds a 15% workout boost for players who worked out for them; the highest
+  // vote total wins. pct = round(weight / totalSourceWeight * 100).
+  function computeCandidates(csvText){
+    var rows=parseCSV(csvText);
+    if(rows.length<2) return [];
+    var header=rows[0];
+    var activeSources=[];
+    for(var sn in SOURCE_WEIGHTS){
+      var idx=-1;
+      for(var c=0;c<header.length;c++){ if((header[c]||'').trim()===sn){idx=c;break;} }
+      if(idx>=0) activeSources.push({name:sn,weight:SOURCE_WEIGHTS[sn],colIdx:idx});
+    }
+    var totalSourceWeight=0;
+    for(var s=0;s<activeSources.length;s++) totalSourceWeight+=activeSources[s].weight;
+
+    // Pick ownership (col 15 = pick num, col 16 = team abbrev)
+    var pickTeamMap={};
+    for(var i=1;i<rows.length;i++){
+      var pn=parseInt(rows[i][15]); var tm=(rows[i][16]||'').trim();
+      if(pn&&tm) pickTeamMap[pn]=normalizeTeam(tm);
+    }
+
+    // Workouts (WO PLAYER / WO TEAM)
+    var woPlayerIdx=-1,woTeamIdx=-1;
+    for(var c2=0;c2<header.length;c2++){
+      var h=(header[c2]||'').trim();
+      if(h==='WO PLAYER')woPlayerIdx=c2;
+      if(h==='WO TEAM')woTeamIdx=c2;
+    }
+    var workoutsByPlayer={};
+    if(woPlayerIdx>=0&&woTeamIdx>=0){
+      for(var i2=1;i2<rows.length;i2++){
+        var wp=(rows[i2][woPlayerIdx]||'').trim();
+        var wt=normalizeTeam(rows[i2][woTeamIdx]);
+        if(wp&&wt){ if(!workoutsByPlayer[wp])workoutsByPlayer[wp]=new Set(); workoutsByPlayer[wp].add(wt); }
+      }
+    }
+
+    // Build players with per-source ranks
+    var players={};
+    for(var i3=1;i3<rows.length;i3++){
+      var name=(rows[i3][0]||'').trim();
+      if(!name)continue;
+      var ranks={},hasAny=false;
+      for(var si=0;si<activeSources.length;si++){
+        var v=(rows[i3][activeSources[si].colIdx]||'').trim();
+        if(v&&!isNaN(parseInt(v))){ranks[activeSources[si].name]=parseInt(v);hasAny=true;}
+      }
+      if(hasAny) players[name]={name:name,ranks:ranks,workoutTeams:workoutsByPlayer[name]||new Set()};
+    }
+
+    // Sorted source lists
+    var sourceLists={};
+    for(var si2=0;si2<activeSources.length;si2++){
+      var src=activeSources[si2]; var list=[];
+      for(var nm in players){ if(players[nm].ranks[src.name]) list.push({name:nm,rank:players[nm].ranks[src.name]}); }
+      list.sort(function(a,b){return a.rank-b.rank;});
+      sourceLists[src.name]=list;
+    }
+
+    var available=new Set(Object.keys(players));
+    var result=[];
+    var boost=totalSourceWeight*0.15;
+    for(var pick=1;pick<=MAX_PICKS;pick++){
+      if(available.size===0)break;
+      var votes={};
+      for(var si3=0;si3<activeSources.length;si3++){
+        var src3=activeSources[si3]; var list3=sourceLists[src3.name]; var top=null;
+        for(var li=0;li<list3.length;li++){ if(available.has(list3[li].name)){top=list3[li];break;} }
+        if(top){ votes[top.name]=(votes[top.name]||0)+src3.weight; }
+      }
+      var teamPicking=pickTeamMap[pick];
+      if(teamPicking){
+        for(var pn2 in players){
+          if(!available.has(pn2))continue;
+          if(players[pn2].workoutTeams.has(teamPicking)) votes[pn2]=(votes[pn2]||0)+boost;
+        }
+      }
+      var cands=[];
+      for(var vn in votes){ cands.push({name:vn,weight:votes[vn],pct:Math.min(100,Math.round((votes[vn]/totalSourceWeight)*100))}); }
+      cands.sort(function(a,b){return b.weight-a.weight;});
+      if(cands.length===0)break;
+      var winner=cands[0];
+      var top3=cands.slice(0,3).map(function(c,i){return {name:c.name,pct:c.pct,winner:i===0};});
+      result.push({pick:pick,team:teamPicking||'',top3:top3});
+      available.delete(winner.name);
+    }
+    return result;
+  }
+
+  function escapeHTML(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  function pickTier(n){ if(n<=5)return 'top5'; if(n<=14)return 'lottery'; if(n<=30)return 'first'; return 'second'; }
+
+  var _lastCandidates=[];
+
+  function render(cands){
+    _lastCandidates=cands;
+    if(!cands.length){ document.getElementById('content').innerHTML='<div class="state">No cascade data available.</div>'; return; }
+    var html='<table><thead><tr><th>Pick</th><th>Team</th><th>Top 3 Candidates</th></tr></thead><tbody>';
+    for(var i=0;i<cands.length;i++){
+      var row=cands[i];
+      var tier=pickTier(row.pick);
+      var candHtml='<div class="cand">';
+      for(var j=0;j<row.top3.length;j++){
+        var c=row.top3[j];
+        var barClass='w'+(j+1);
+        candHtml+='<div class="cand-row">'
+          +'<span class="cand-rank">'+(j+1)+'</span>'
+          +'<span class="cand-name'+(c.winner?' winner':'')+'">'+escapeHTML(c.name)+'</span>'
+          +'<span class="cand-bar-wrap"><span class="cand-bar '+barClass+'" style="width:'+c.pct+'%"></span></span>'
+          +'<span class="cand-pct">'+c.pct+'%</span>'
+          +'</div>';
+      }
+      candHtml+='</div>';
+      html+='<tr><td class="pick-num '+tier+'">'+row.pick+'</td><td class="team-abbr">'+escapeHTML(row.team)+'</td><td>'+candHtml+'</td></tr>';
+    }
+    html+='</tbody></table>';
+    document.getElementById('content').innerHTML=html;
+  }
+
+  // Presto export: simple HTML table, Presto-safe inline styles.
+  function generatePresto(){
+    if(!_lastCandidates.length)return '';
+    var out='<div style="font-family:sans-serif;max-width:700px;margin:0 auto">\n';
+    out+='  <p style="margin:0 0 1em">The three most likely selections at each pick of the 2026 NBA Draft, based on our aggregated big-board consensus.</p>\n';
+    out+='  <table style="width:100%;border-collapse:collapse;font-size:.9em">\n';
+    out+='    <thead><tr style="border-bottom:2px solid #b45309"><th style="text-align:left;padding:.3em">Pick</th><th style="text-align:left;padding:.3em">Team</th><th style="text-align:left;padding:.3em">Top 3 Candidates</th></tr></thead>\n';
+    out+='    <tbody>\n';
+    for(var i=0;i<_lastCandidates.length;i++){
+      var row=_lastCandidates[i];
+      var cellParts=[];
+      for(var j=0;j<row.top3.length;j++){
+        var c=row.top3[j];
+        cellParts.push((j+1)+'. '+escapeHTML(c.name)+' ('+c.pct+'%)');
+      }
+      out+='      <tr style="border-bottom:1px solid #e2e5e9"><td style="padding:.3em;font-weight:700">'+row.pick+'</td><td style="padding:.3em">'+escapeHTML(row.team)+'</td><td style="padding:.3em">'+cellParts.join(' &middot; ')+'</td></tr>\n';
+    }
+    out+='    </tbody>\n  </table>\n</div>';
+    return out;
+  }
+
+  function flashButton(btn,msg,ok){
+    var orig=btn.textContent; btn.textContent=msg;
+    btn.style.background=ok?'var(--green)':'#dc2626'; btn.style.color='#fff';
+    setTimeout(function(){btn.textContent=orig;btn.style.background='';btn.style.color='';},1500);
+  }
+
+  function copyPresto(){
+    var code=generatePresto();
+    var btn=document.getElementById('btnCopyPresto');
+    if(!code){flashButton(btn,'Nothing to copy',false);return;}
+    if(navigator.clipboard&&navigator.clipboard.writeText){
+      navigator.clipboard.writeText(code).then(function(){flashButton(btn,'Copied!',true);},function(){flashButton(btn,'Copy failed',false);});
+    } else {
+      var ta=document.createElement('textarea');ta.value=code;document.body.appendChild(ta);ta.select();
+      try{document.execCommand('copy');flashButton(btn,'Copied!',true);}catch(e){flashButton(btn,'Copy failed',false);}
+      document.body.removeChild(ta);
+    }
+  }
+
+  async function load(forceRefresh){
+    document.getElementById('content').innerHTML='<div class="state">Loading cascade&#8230;</div>';
+    document.getElementById('metaInfo').textContent='Loading&#8230;';
+    try {
+      var url=forceRefresh?(CSV_URL+'?nocache=1'):CSV_URL;
+      var r=await fetch(url,forceRefresh?{cache:'no-store'}:{});
+      if(!r.ok)throw new Error('HTTP '+r.status);
+      var text=await r.text();
+      var cands=computeCandidates(text);
+      render(cands);
+      document.getElementById('metaInfo').textContent=cands.length+' picks · updated '+new Date().toLocaleTimeString();
+    } catch(err){
+      document.getElementById('content').innerHTML='<div class="state">Error loading data: '+escapeHTML(err.message)+'</div>';
+      document.getElementById('metaInfo').textContent='';
+    }
+  }
+
+  document.getElementById('btnRefresh').addEventListener('click',function(){load(true);});
+  document.getElementById('btnCopyPresto').addEventListener('click',copyPresto);
+  // Presto button only in editorial mode (?ed=1)
+  (function(){ var params=new URLSearchParams(window.location.search); if(params.get('ed')==='1') document.getElementById('btnCopyPresto').style.display='inline-block'; })();
+  load(false);
+</script>
+</body>
+</html>
